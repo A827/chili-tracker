@@ -1,10 +1,16 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
+import altair as alt
+import qrcode
+from io import BytesIO
+from PIL import Image
 
-# --- Functions ---
+# ---------------------
+# Helper Functions
+# ---------------------
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -17,44 +23,46 @@ def get_user_id(username):
     result = c.fetchone()
     return result[0] if result else None
 
-def init_user_table():
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        role TEXT NOT NULL
-    )''')
-    conn.commit()
-
-def init_chili_table():
-    c.execute('''CREATE TABLE IF NOT EXISTS chilies (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        variety TEXT NOT NULL,
-        planting_date DATE NOT NULL,
-        seeds_planted INTEGER NOT NULL,
-        germinated_seeds INTEGER,
-        germination_date DATE,
-        harvest_yield INTEGER,
-        notes TEXT,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )''')
-    conn.commit()
-
-# --- Database Setup ---
-conn = sqlite3.connect('chili_tracker.db', check_same_thread=False)
+# ---------------------
+# DB Setup
+# ---------------------
+conn = sqlite3.connect("chili_tracker_with_user.db", check_same_thread=False)
 c = conn.cursor()
-init_user_table()
-init_chili_table()
 
-# --- Session State ---
+c.execute('''CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    role TEXT NOT NULL
+)''')
+
+c.execute('''CREATE TABLE IF NOT EXISTS chilies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    variety TEXT NOT NULL,
+    planting_date DATE NOT NULL,
+    seeds_planted INTEGER NOT NULL,
+    germinated_seeds INTEGER,
+    germination_date DATE,
+    harvest_yield INTEGER,
+    notes TEXT,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+)''')
+
+conn.commit()
+
+# ---------------------
+# Session State Init
+# ---------------------
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.role = ""
     st.session_state.user_id = None
 
-# --- Authentication UI ---
+# ---------------------
+# Login UI
+# ---------------------
 def login_ui():
     st.title("🔐 Chili Tracker Login")
 
@@ -67,7 +75,8 @@ def login_ui():
             st.session_state.username = user[1]
             st.session_state.user_id = user[0]
             st.session_state.role = user[3]
-            st.success(f"Welcome back, {username}!")
+            st.success(f"Welcome, {username}!")
+            st.experimental_rerun()
         else:
             st.error("❌ Incorrect username or password")
 
@@ -81,48 +90,131 @@ def login_ui():
             c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
                       (new_user, hash_password(new_pass), role))
             conn.commit()
-            st.success("✅ Account created. You can now log in.")
+            st.success("✅ Account created. Please log in.")
         except sqlite3.IntegrityError:
             st.error("❌ Username already exists.")
 
-# --- Main App ---
+# ---------------------
+# Main App Pages
+# ---------------------
+def show_dashboard():
+    st.subheader("🔔 Harvest Reminders")
+    df = load_user_data()
+    today = datetime.today().date()
+    if not df.empty:
+        df["planting_date"] = pd.to_datetime(df["planting_date"])
+        df["days_since"] = (today - df["planting_date"].dt.date).dt.days
+        overdue = df[df["harvest_yield"].isnull() & (df["days_since"] > 90)]
+        if not overdue.empty:
+            st.warning("Some chilies may need harvesting:")
+            st.dataframe(overdue[["variety", "planting_date", "days_since"]])
+        else:
+            st.success("✅ No overdue plantings.")
+    else:
+        st.info("No chili records yet.")
+
+def show_add_form():
+    st.subheader("➕ Add New Chili Plant")
+    with st.form("add_chili"):
+        variety = st.text_input("Chili Variety")
+        planting_date = st.date_input("Planting Date", datetime.today())
+        seeds_planted = st.number_input("Seeds Planted", min_value=1)
+        germinated_seeds = st.number_input("Germinated Seeds", min_value=0)
+        germination_date = st.date_input("Germination Date", datetime.today())
+        harvest_yield = st.number_input("Harvest Yield", min_value=0)
+        notes = st.text_area("Notes")
+        if st.form_submit_button("Add Plant"):
+            c.execute('''INSERT INTO chilies (user_id, variety, planting_date, seeds_planted, germinated_seeds,
+                         germination_date, harvest_yield, notes)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                      (st.session_state.user_id, variety, planting_date, seeds_planted,
+                       germinated_seeds, germination_date, harvest_yield, notes))
+            conn.commit()
+            st.success(f"🌱 Added {variety} successfully.")
+
+def show_my_chilies():
+    st.subheader("📋 My Chili Records")
+    df = load_user_data()
+    st.dataframe(df, use_container_width=True)
+
+def show_analytics():
+    st.subheader("📊 Chili Analytics")
+    df = load_user_data()
+    if not df.empty:
+        st.markdown("### Yield per Variety")
+        chart = alt.Chart(df[df["harvest_yield"].notnull()]).mark_bar().encode(
+            x="variety", y="sum(harvest_yield)", tooltip=["variety", "sum(harvest_yield)"]
+        ).properties(width=700)
+        st.altair_chart(chart, use_container_width=True)
+
+        st.markdown("### Germination Success")
+        df["germ_rate"] = (df["germinated_seeds"] / df["seeds_planted"] * 100).round(1)
+        st.dataframe(df[["variety", "seeds_planted", "germinated_seeds", "germ_rate"]])
+    else:
+        st.info("No data available.")
+
+def show_calendar():
+    st.subheader("📅 Planting Calendar")
+    df = load_user_data()
+    if not df.empty:
+        df["planting_date"] = pd.to_datetime(df["planting_date"])
+        df_sorted = df.sort_values("planting_date")
+        st.dataframe(df_sorted[["variety", "planting_date", "harvest_yield"]])
+    else:
+        st.info("No planting records yet.")
+
+def show_qr():
+    st.subheader("🏷 Generate QR Code")
+    df = load_user_data()
+    if not df.empty:
+        chili_id = st.selectbox("Select Record ID", df["id"].astype(str))
+        url = f"https://your-chili-app/record/{chili_id}"
+        qr = qrcode.make(url)
+        buf = BytesIO()
+        qr.save(buf)
+        st.image(Image.open(buf), caption=f"QR Code for ID {chili_id}")
+    else:
+        st.info("No records to generate QR codes.")
+
+def show_export():
+    st.subheader("📥 Export My Data")
+    df = load_user_data()
+    if not df.empty:
+        csv = df.to_csv(index=False)
+        st.download_button("Download CSV", csv, file_name="my_chili_data.csv", mime="text/csv")
+    else:
+        st.info("No data to export.")
+
+def load_user_data():
+    return pd.read_sql("SELECT * FROM chilies WHERE user_id = ? ORDER BY planting_date DESC", conn,
+                       params=(st.session_state.user_id,))
+
+# ---------------------
+# App Start
+# ---------------------
 if not st.session_state.logged_in:
     login_ui()
     st.stop()
 
-# --- Logged-in App UI ---
-st.sidebar.title("🌶 Welcome")
-st.sidebar.markdown(f"Logged in as **{st.session_state.username}** ({st.session_state.role})")
-if st.sidebar.button("🚪 Logout"):
+# Sidebar Navigation
+st.sidebar.title("🌶 Chili Tracker")
+st.sidebar.markdown(f"Logged in as: **{st.session_state.username}**")
+page = st.sidebar.radio("Navigate", ["Dashboard", "Add Planting", "My Chilies", "Analytics", "Calendar", "QR Labels", "Export", "Logout"])
+
+if page == "Dashboard":
+    show_dashboard()
+elif page == "Add Planting":
+    show_add_form()
+elif page == "My Chilies":
+    show_my_chilies()
+elif page == "Analytics":
+    show_analytics()
+elif page == "Calendar":
+    show_calendar()
+elif page == "QR Labels":
+    show_qr()
+elif page == "Export":
+    show_export()
+elif page == "Logout":
     st.session_state.logged_in = False
     st.experimental_rerun()
-
-st.title("🌱 My Chili Tracker")
-
-# Add Chili Form
-st.subheader("➕ Add Chili Record")
-
-with st.form("add_chili"):
-    variety = st.text_input("Chili Variety (e.g. Ghost Pepper)")
-    planting_date = st.date_input("Planting Date", datetime.today())
-    seeds_planted = st.number_input("Seeds Planted", min_value=1)
-    germinated_seeds = st.number_input("Germinated Seeds", min_value=0)
-    germination_date = st.date_input("Germination Date", datetime.today())
-    harvest_yield = st.number_input("Harvest Yield", min_value=0)
-    notes = st.text_area("Notes (optional)")
-    submitted = st.form_submit_button("Add")
-
-    if submitted:
-        c.execute('''INSERT INTO chilies (user_id, variety, planting_date, seeds_planted, germinated_seeds,
-                     germination_date, harvest_yield, notes)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                  (st.session_state.user_id, variety, planting_date, seeds_planted,
-                   germinated_seeds, germination_date, harvest_yield, notes))
-        conn.commit()
-        st.success(f"🌶 Added {variety} chili planting.")
-
-# View Chili Records
-st.subheader("📋 My Chili Records")
-df = pd.read_sql("SELECT * FROM chilies WHERE user_id = ? ORDER BY planting_date DESC", conn,
-                 params=(st.session_state.user_id,))
-st.dataframe(df, use_container_width=True)
