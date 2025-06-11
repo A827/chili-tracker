@@ -42,7 +42,7 @@ def init_chili_table():
     conn.commit()
 
 # --- Database Setup ---
-conn = sqlite3.connect('database.db', check_same_thread=False)
+conn = sqlite3.connect('chili_tracker.db', check_same_thread=False)
 c = conn.cursor()
 init_user_table()
 init_chili_table()
