@@ -3,50 +3,61 @@ import pandas as pd
 import sqlite3
 from datetime import datetime
 
-# Database setup
+# Connect to SQLite database
 conn = sqlite3.connect('database.db', check_same_thread=False)
 c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS chilies (
-                id INTEGER PRIMARY KEY,
-                name TEXT,
-                planting_date DATE,
-                seeds_planted INTEGER,
-                germination_date DATE,
-                yield INTEGER,
-                notes TEXT
-            )''')
+
+# Create table if it doesn't exist
+c.execute('''
+CREATE TABLE IF NOT EXISTS chilies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    variety TEXT NOT NULL,
+    planting_date DATE NOT NULL,
+    seeds_planted INTEGER NOT NULL,
+    germination_date DATE,
+    harvest_yield INTEGER,
+    notes TEXT
+)
+''')
 conn.commit()
 
-# Streamlit UI
-st.title('🌶️ Chili Tracker')
+# Streamlit App UI
+st.title('🌶 Chili Planting Tracker')
 
-# Form to input chili data
-with st.form("Add Chili"):
-    name = st.text_input("Chili Type")
+# Form to add chili planting data
+st.header("➕ Add Chili Planting")
+
+with st.form("add_chili"):
+    variety = st.text_input("Chili Variety (e.g., Jalapeño, Ghost)")
     planting_date = st.date_input("Planting Date", datetime.today())
-    seeds_planted = st.number_input("Seeds Planted", min_value=1, value=1)
+    seeds_planted = st.number_input("Number of Seeds Planted", min_value=1, step=1)
     germination_date = st.date_input("Germination Date (optional)", value=None)
-    chili_yield = st.number_input("Yield (optional)", min_value=0, value=0)
-    notes = st.text_area("Notes", "")
+    harvest_yield = st.number_input("Harvest Yield (optional, number of chilies)", min_value=0, step=1)
+    notes = st.text_area("Notes (optional)")
 
-    submit = st.form_submit_button("Add Chili")
+    submitted = st.form_submit_button("Add to Tracker")
 
-if submit:
-    c.execute('INSERT INTO chilies (name, planting_date, seeds_planted, germination_date, yield, notes) VALUES (?, ?, ?, ?, ?, ?)',
-              (name, planting_date, seeds_planted,
-               germination_date if germination_date else None,
-               chili_yield, notes))
-    conn.commit()
-    st.success("Chili added!")
+    if submitted:
+        c.execute('''
+            INSERT INTO chilies (variety, planting_date, seeds_planted, germination_date, harvest_yield, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (variety, planting_date, seeds_planted, germination_date or None, harvest_yield or None, notes))
+        conn.commit()
+        st.success(f"Successfully added {variety}!")
 
-# Display data
-st.header("📋 Chili Planting Log")
-df = pd.read_sql("SELECT * FROM chilies", conn)
-st.dataframe(df)
+# Display existing records
+st.header("📋 Planting Records")
 
-# Export option
-if st.button("Export to CSV"):
-    df.to_csv("chili_data.csv", index=False)
-    st.download_button(label="Download CSV", data=df.to_csv(index=False).encode('utf-8'),
-                       file_name="chili_data.csv", mime="text/csv")
+df = pd.read_sql("SELECT * FROM chilies ORDER BY planting_date DESC", conn)
+st.dataframe(df, use_container_width=True)
+
+# Export data as CSV
+st.header("📥 Export Data")
+
+if st.button("Download as CSV"):
+    csv = df.to_csv(index=False)
+    st.download_button(label="📂 Download CSV",
+                       data=csv,
+                       file_name='chili_data.csv',
+                       mime='text/csv')
 
