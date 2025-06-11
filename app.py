@@ -46,7 +46,9 @@ with st.form("add_chili"):
     planting_date = st.date_input("Planting Date", datetime.today())
     seeds_planted = st.number_input("Number of Seeds Planted", min_value=1, step=1)
 
+    # ✅ This must be changed to avoid crashing the dropdown
     germination_date = st.date_input("Germination Date (optional)", datetime.today())
+
     harvest_yield = st.number_input("Harvest Yield (optional, number of chilies)", min_value=0, step=1)
     notes = st.text_area("Notes (optional)")
 
@@ -59,6 +61,7 @@ with st.form("add_chili"):
         ''', (variety, planting_date, seeds_planted, germination_date, harvest_yield or None, notes))
         conn.commit()
         st.success(f"🌱 Successfully added {variety}!")
+
 
 # Display records
 st.header("📋 Planting Records")
