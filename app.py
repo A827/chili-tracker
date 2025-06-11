@@ -7,6 +7,7 @@ import altair as alt
 import qrcode
 from io import BytesIO
 from PIL import Image
+import os
 
 # ---------------------
 # Helper Functions
@@ -46,10 +47,15 @@ c.execute('''CREATE TABLE IF NOT EXISTS chilies (
     germination_date DATE,
     harvest_yield INTEGER,
     notes TEXT,
+    photo_path TEXT,
     FOREIGN KEY(user_id) REFERENCES users(id)
 )''')
 
 conn.commit()
+
+# Create upload folder if not exists
+if not os.path.exists("uploaded_photos"):
+    os.makedirs("uploaded_photos")
 
 # ---------------------
 # Session State Init
@@ -124,19 +130,32 @@ def show_add_form():
         germination_date = st.date_input("Germination Date", datetime.today())
         harvest_yield = st.number_input("Harvest Yield", min_value=0)
         notes = st.text_area("Notes")
+        photo = st.file_uploader("Upload a photo (optional)", type=["jpg", "jpeg", "png"])
+
+        photo_path = None
+        if photo:
+            photo_path = os.path.join("uploaded_photos", photo.name)
+            with open(photo_path, "wb") as f:
+                f.write(photo.getbuffer())
+
         if st.form_submit_button("Add Plant"):
             c.execute('''INSERT INTO chilies (user_id, variety, planting_date, seeds_planted, germinated_seeds,
-                         germination_date, harvest_yield, notes)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                         germination_date, harvest_yield, notes, photo_path)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                       (st.session_state.user_id, variety, planting_date, seeds_planted,
-                       germinated_seeds, germination_date, harvest_yield, notes))
+                       germinated_seeds, germination_date, harvest_yield, notes, photo_path))
             conn.commit()
             st.success(f"🌱 Added {variety} successfully.")
 
 def show_my_chilies():
     st.subheader("📋 My Chili Records")
     df = load_user_data()
-    st.dataframe(df, use_container_width=True)
+    for _, row in df.iterrows():
+        st.markdown(f"**{row['variety']}** planted on {row['planting_date']}")
+        if row['photo_path']:
+            st.image(row['photo_path'], width=200)
+        st.text(f"Seeds: {row['seeds_planted']} | Germinated: {row['germinated_seeds']} | Yield: {row['harvest_yield']}")
+        st.markdown("---")
 
 def show_analytics():
     st.subheader("📊 Chili Analytics")
@@ -151,6 +170,13 @@ def show_analytics():
         st.markdown("### Germination Success")
         df["germ_rate"] = (df["germinated_seeds"] / df["seeds_planted"] * 100).round(1)
         st.dataframe(df[["variety", "seeds_planted", "germinated_seeds", "germ_rate"]])
+
+        st.markdown("### Monthly Yield")
+        df["month"] = pd.to_datetime(df["planting_date"]).dt.to_period("M").astype(str)
+        chart2 = alt.Chart(df[df["harvest_yield"].notnull()]).mark_bar().encode(
+            x="month", y="sum(harvest_yield)", color="variety"
+        ).properties(width=700)
+        st.altair_chart(chart2, use_container_width=True)
     else:
         st.info("No data available.")
 
