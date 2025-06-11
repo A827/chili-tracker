@@ -76,7 +76,7 @@ def login_ui():
             st.session_state.user_id = user[0]
             st.session_state.role = user[3]
             st.success(f"Welcome, {username}!")
-st.session_state._rerun = True
+            st.session_state._rerun = True
         else:
             st.error("❌ Incorrect username or password")
 
@@ -97,6 +97,7 @@ st.session_state._rerun = True
 # ---------------------
 # Main App Pages
 # ---------------------
+
 def show_dashboard():
     st.subheader("🔔 Harvest Reminders")
     df = load_user_data()
@@ -195,8 +196,8 @@ def load_user_data():
 if not st.session_state.logged_in:
     login_ui()
     if '_rerun' in st.session_state and st.session_state._rerun:
-    st.session_state._rerun = False
-    st.experimental_rerun()
+        st.session_state._rerun = False
+        st.experimental_rerun()
     st.stop()
 
 # Sidebar Navigation
