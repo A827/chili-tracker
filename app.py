@@ -76,7 +76,7 @@ def login_ui():
             st.session_state.user_id = user[0]
             st.session_state.role = user[3]
             st.success(f"Welcome, {username}!")
-            st.experimental_rerun()
+            st.session_state._rerun = True
         else:
             st.error("❌ Incorrect username or password")
 
