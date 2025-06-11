@@ -42,7 +42,13 @@ st.title('🌶 Chili Planting Tracker')
 st.header("➕ Add Chili Planting")
 
 with st.form("add_chili"):
+    dropdown_ok = st.radio("Can you use the dropdown?", ["Yes", "No"])
+
+if dropdown_ok == "Yes":
     variety = st.selectbox("Select Chili Variety", chili_varieties)
+else:
+    variety = st.text_input("Enter Chili Variety manually")
+
     planting_date = st.date_input("Planting Date", datetime.today())
     seeds_planted = st.number_input("Number of Seeds Planted", min_value=1, step=1)
 
