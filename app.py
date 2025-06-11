@@ -3,11 +3,11 @@ import pandas as pd
 import sqlite3
 from datetime import datetime
 
-# Connect to SQLite database
+# Database connection
 conn = sqlite3.connect('database.db', check_same_thread=False)
 c = conn.cursor()
 
-# Create table if it doesn't exist
+# Create table if not exists
 c.execute('''
 CREATE TABLE IF NOT EXISTS chilies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,14 +21,28 @@ CREATE TABLE IF NOT EXISTS chilies (
 ''')
 conn.commit()
 
-# Streamlit App UI
+# Define chili varieties
+chili_varieties = [
+    "Ghost Pepper",
+    "Jalapeño",
+    "Carolina Reaper",
+    "Bhut Jolokia",
+    "Cayenne",
+    "Habanero",
+    "Kıl Biber",
+    "Cherry Pepper",
+    "Peynir Biberi",
+    "Kırmızı Kıl Biberi"
+]
+
+# Streamlit UI
 st.title('🌶 Chili Planting Tracker')
 
-# Form to add chili planting data
+# Form for adding chili planting
 st.header("➕ Add Chili Planting")
 
 with st.form("add_chili"):
-    variety = st.text_input("Chili Variety (e.g., Jalapeño, Ghost)")
+    variety = st.selectbox("Select Chili Variety", chili_varieties)
     planting_date = st.date_input("Planting Date", datetime.today())
     seeds_planted = st.number_input("Number of Seeds Planted", min_value=1, step=1)
     germination_date = st.date_input("Germination Date (optional)", value=None)
@@ -43,15 +57,15 @@ with st.form("add_chili"):
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (variety, planting_date, seeds_planted, germination_date or None, harvest_yield or None, notes))
         conn.commit()
-        st.success(f"Successfully added {variety}!")
+        st.success(f"🌱 Successfully added {variety}!")
 
-# Display existing records
+# Display records
 st.header("📋 Planting Records")
 
 df = pd.read_sql("SELECT * FROM chilies ORDER BY planting_date DESC", conn)
 st.dataframe(df, use_container_width=True)
 
-# Export data as CSV
+# Export data
 st.header("📥 Export Data")
 
 if st.button("Download as CSV"):
@@ -60,4 +74,3 @@ if st.button("Download as CSV"):
                        data=csv,
                        file_name='chili_data.csv',
                        mime='text/csv')
-
