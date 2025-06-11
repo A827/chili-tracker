@@ -194,6 +194,9 @@ def load_user_data():
 # ---------------------
 if not st.session_state.logged_in:
     login_ui()
+    if '_rerun' in st.session_state and st.session_state._rerun:
+    st.session_state._rerun = False
+    st.experimental_rerun()
     st.stop()
 
 # Sidebar Navigation
